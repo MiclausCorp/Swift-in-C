@@ -1,37 +1,106 @@
-## Welcome to GitHub Pages
+## Welcome
+This guide will teach you how to call a Swift function from C/C++, and pass data between them.
 
-You can use the [editor on GitHub](https://github.com/MiclausCorp/Swift-in-C/edit/main/README.md) to maintain and preview the content for your website in Markdown files.
+## Writing the Swift code
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+First, create a Swift Source file named **main.swift** and copy the following code:
+```swift
+@_cdecl("greet")
+public func greet() {
+   print("Hello, World!")
+}
+```
+This is a regular "Hello, World!"-example wrapped in a function called `greet()`.
 
-### Markdown
+The only thing that stands out, is the Function Attribute `@_cdecl("greet")`.
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+### But what is `@_cdecl` ?
+cdecl (which stands for C declaration), is an **internal** and **undocumented** function attribute in the Swift Compiler, which according to vague information found on the web, enforces C-name mangling. 
 
-```markdown
-Syntax highlighted code block
+Note: `@_cdecl` solely enforces the name mangling; not the calling convention!
 
-# Header 1
-## Header 2
-### Header 3
+## Creating a Dynamic Linked Library
+In order to link our code with a C/C++ application, will need a library. 
 
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
+In order to compile our code as a linked library, **specify `-emit-library` when compiling the .swift file.**
+```shell
+swiftc main.swift -emit-library -o libGreet.dylib
 ```
 
-For more details see [Basic writing and formatting syntax](https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax).
+This will result in a file library called "libGreet.dylib" (or "libGreet.so" on Linux). If you'd open a Hex viewer right now and examine the file, you'll see it exported the function symbol as "_greet".
 
-### Jekyll Themes
+## Writing the C/C++ Code
+We'll use C++ for the purposes of this guide. Create a C++ Source file named **main.cpp** and copy the following code:
+```cpp
+// only "extern" when targeting C++.
+extern "C" void greet();
 
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/MiclausCorp/Swift-in-C/settings/pages). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
+int main() {
+    greet();
+    return 0;
+}
+```
+Here we declare `greet()` as an external reference, which will be provided by the library libGreet.dylib, we compiled before.
 
-### Support or Contact
+## Compiling and Linking
+What's left at this point is just to compile and link our code. 
 
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://support.github.com/contact) and we’ll help you sort it out.
+We're using C++, so we'll call clang++, pass it our libGreet.dylib library, the main Source file and specify an output file.
+```
+clang++ libGreet.dylib main.cpp -o main
+```
+
+When you run the application, you'll be greeted with following:
+```
+./main
+> Hello, World!
+```
+Congratulations, you've just called Swift code from a library, in C/C++
+
+## Passing Arguments
+`@_cdecl` directive also forces the cdecl-calling convention, which trivially enables us to pass arguments.
+
+Create a Swift Source file named **Square.swift** and copy the following code:
+```swift
+@_cdecl("square")
+public func square(_ input: Int32) -> Int32 {
+   return input*input
+}
+```
+This is a function which takes in an argument `input` and returns an 32-bit integer.
+
+Now compile the Swift source code file to a Dynamically Linked Library using:
+```
+swiftc Square.swift -emit-library -o libSquare.dylib
+```
+
+Now modify **main.cpp** to the following:
+```cpp
+#include <cstdint>
+#include <iostream>
+
+extern "C" std::int32_t square(std::int32_t);
+
+int main() {
+    std::cout << square(2) << std::endl;
+    return 0;
+}
+```
+Here we're passing *2* to the `square(_)` Swift function, and we expect to get something back, so we're also printing it to the Standard Output.
+
+Now compile and link the C++ source code file using:
+```
+clang++ libSquare.dylib main.cpp -o main
+```
+
+When you run the application now, you'll see the following:
+```
+./main
+> 4
+```
+You'll see that it prints *4*, which is indeed, the square of *2*.
+
+You're free to mess around with this and see what you can do with it. But don't expect future stability and definetly don't use this in a production application. `@_cdecl` is afterall, an internal function attribute.
+
+You may also be interested in this:
+[The Swift and C++ interoperability workgroup](https://forums.swift.org/t/swift-and-c-interoperability-workgroup-announcement/54998)
